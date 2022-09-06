@@ -1,13 +1,43 @@
 #include <switch.h>
 #include <Python.h>
+#include <stdio.h>
 
-u32 __nx_applet_exit_mode = 1;
-extern u32 __nx_applet_type;
-extern size_t __nx_heap_size;
+static PyObject* commitsave(PyObject* self, PyObject* args)
+{
+    fsdevCommitDevice("save");
+    return Py_None;
+}
 
-#if 0
-PyMODINIT_FUNC init_libnx();
-#endif
+static PyObject* startboost(PyObject* self, PyObject* args)
+{
+    appletSetCpuBoostMode(ApmPerformanceMode_Boost);
+    return Py_None;
+}
+
+static PyObject* disableboost(PyObject* self, PyObject* args)
+{
+    appletSetCpuBoostMode(ApmPerformanceMode_Normal);
+    return Py_None;
+}
+
+static PyObject* restartprogram(PyObject* self, PyObject* args)
+{
+    appletRestartProgram(NULL, 0);
+    return Py_None;
+}
+
+static PyMethodDef myMethods[] = {
+    { "commitsave", commitsave, METH_NOARGS, "commitsave" },
+    { "startboost", startboost, METH_NOARGS, "startboost" },
+    { "disableboost", disableboost, METH_NOARGS, "disableboost" },
+    { "restartprogram", restartprogram, METH_NOARGS, "restartprogram" },
+    { NULL, NULL, 0, NULL }
+};
+
+PyMODINIT_FUNC init_otrh_libnx(void)
+{
+    Py_InitModule("_otrhlibnx", myMethods);
+}
 
 PyMODINIT_FUNC initpygame_sdl2_color();
 PyMODINIT_FUNC initpygame_sdl2_controller();
@@ -15,18 +45,11 @@ PyMODINIT_FUNC initpygame_sdl2_display();
 PyMODINIT_FUNC initpygame_sdl2_draw();
 PyMODINIT_FUNC initpygame_sdl2_error();
 PyMODINIT_FUNC initpygame_sdl2_event();
-#if 0
-PyMODINIT_FUNC initpygame_sdl2_font();
-#endif
 PyMODINIT_FUNC initpygame_sdl2_gfxdraw();
 PyMODINIT_FUNC initpygame_sdl2_image();
 PyMODINIT_FUNC initpygame_sdl2_joystick();
 PyMODINIT_FUNC initpygame_sdl2_key();
 PyMODINIT_FUNC initpygame_sdl2_locals();
-#if 0
-PyMODINIT_FUNC initpygame_sdl2_mixer();
-PyMODINIT_FUNC initpygame_sdl2_mixer_music();
-#endif
 PyMODINIT_FUNC initpygame_sdl2_mouse();
 PyMODINIT_FUNC initpygame_sdl2_power();
 PyMODINIT_FUNC initpygame_sdl2_pygame_time();
@@ -49,16 +72,6 @@ PyMODINIT_FUNC initrenpy_gl_glenviron_shader();
 PyMODINIT_FUNC initrenpy_gl_glrtt_copy();
 PyMODINIT_FUNC initrenpy_gl_glrtt_fbo();
 PyMODINIT_FUNC initrenpy_gl_gltexture();
-#if 0
-PyMODINIT_FUNC initrenpy_gl2_gl2draw();
-PyMODINIT_FUNC initrenpy_gl2_gl2environ_shader();
-PyMODINIT_FUNC initrenpy_gl2_gl2geometry();
-PyMODINIT_FUNC initrenpy_gl2_gl2rtt_fbo();
-PyMODINIT_FUNC initrenpy_gl2_gl2shader();
-PyMODINIT_FUNC initrenpy_gl2_gl2texture();
-PyMODINIT_FUNC initrenpy_gl2_uguu();
-PyMODINIT_FUNC initrenpy_gl2_uguugl();
-#endif
 PyMODINIT_FUNC initrenpy_parsersupport();
 PyMODINIT_FUNC initrenpy_pydict();
 PyMODINIT_FUNC initrenpy_style();
@@ -81,41 +94,23 @@ PyMODINIT_FUNC initrenpy_text_texwrap();
 // Overide the heap initialization function.
 void __libnx_initheap(void)
 {
-    void*  addr;
-    size_t size = 0;
-    size_t mem_available = 0, mem_used = 0;
-    const size_t max_mem = 0x18000000;
+    void* addr = NULL;
+    u64 size = 0;
+    u64 mem_available = 0, mem_used = 0;
 
-    if (envHasHeapOverride()) {
-        addr = envGetHeapOverrideAddr();
-        size = envGetHeapOverrideSize();
-    }
-    else {
-        if (__nx_heap_size==0) {
-            svcGetInfo(&mem_available, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
-            svcGetInfo(&mem_used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
-            if (mem_available > mem_used+0x200000)
-                size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
-            if (size==0)
-                size = 0x2000000*16;
-        }
-        else {
-            size = __nx_heap_size;
-        }
+    svcGetInfo(&mem_available, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&mem_used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
 
-        // Limit heap memory to 384 MiB (to give room for VRAM and Python heap)
-        if (size > max_mem)
-        {
-            size = max_mem;
-        }
+    if (mem_available > mem_used+0x200000)
+        size = (mem_available - mem_used - 0x200000) & ~0x1FFFFF;
+    if (size == 0)
+        size = 0x2000000*16;
 
-        Result rc = svcSetHeapSize(&addr, size);
+    Result rc = svcSetHeapSize(&addr, size);
 
-        if (R_FAILED(rc))
-            diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_HeapAllocFailed));
-    }
+    if (R_FAILED(rc) || addr==NULL)
+        diagAbortWithResult(MAKERESULT(Module_Libnx, LibnxError_HeapAllocFailed));
 
-    // References to the bump allocator in Newlib.
     extern char* fake_heap_start;
     extern char* fake_heap_end;
 
@@ -123,30 +118,94 @@ void __libnx_initheap(void)
     fake_heap_end   = (char*)addr + size;
 }
 
+
+Result createSaveData(u64 TitleID, AccountUid userID)
+{
+    NsApplicationControlData g_applicationControlData;
+    size_t dummy;
+
+    nsGetApplicationControlData(0x1, TitleID, &g_applicationControlData, sizeof(g_applicationControlData), &dummy);
+
+    FsSaveDataAttribute attr;
+    memset(&attr, 0, sizeof(FsSaveDataAttribute));
+    attr.application_id = TitleID;
+    attr.uid = userID;
+    attr.system_save_data_id = 0;
+    attr.save_data_type = FsSaveDataType_Account;
+    attr.save_data_rank = 0;
+    attr.save_data_index = 0;
+
+    FsSaveDataCreationInfo crt;
+    memset(&crt, 0, sizeof(FsSaveDataCreationInfo));
+            
+    crt.save_data_size = 0x800000;
+    crt.journal_size = 0x400000;
+    crt.available_size = 0x8000;
+    crt.owner_id = g_applicationControlData.nacp.save_data_owner_id;
+    crt.flags = 0;
+    crt.save_data_space_id = FsSaveDataSpaceId_User;
+
+    FsSaveDataMetaInfo meta={};
+
+    return fsCreateSaveDataFileSystem(&attr, &crt, &meta);
+}
+
 void userAppInit()
 {
+
+    fsdevUnmountAll();
+
+    Result rc=0;
+    u64 cur_progid = 0;
+    AccountUid userID={0};
+    PselUserSelectionSettings settings;
+    
+    rc = svcGetInfo(&cur_progid, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0);
+    rc = accountInitialize(AccountServiceType_Application);
+    rc = accountGetPreselectedUser(&userID);
+    if (R_FAILED(rc)) {
+        s32 count;
+
+        accountGetUserCount(&count);
+
+        if (count > 1) {
+            pselShowUserSelector(&userID, &settings);
+        } else {
+            size_t loadedUsers;
+            AccountUid account_ids[count];
+            accountListAllUsers(account_ids, count, &loadedUsers);
+            userID = account_ids[0];
+        }
+    }
+
+    if (accountUidIsValid(&userID)) {
+        rc = fsdevMountSaveData("save", cur_progid, userID);
+        if (R_FAILED(rc)) {
+            rc = createSaveData(cur_progid, userID);
+            rc = fsdevMountSaveData("save", cur_progid, userID);
+        }
+    }
+
     romfsInit();
     socketInitializeDefault();
-    nxlinkStdio();
 }
 
 void userAppExit()
 {
+    fsdevCommitDevice("save");
+    fsdevUnmountDevice("save");
     socketExit();
     romfsExit();
 }
+
 
 ConsoleRenderer* getDefaultConsoleRenderer(void)
 {
     return NULL;
 }
 
-char relative_dir_path[0x400];
-char sysconfigdata_file_path[0x400];
-char python_home_buffer[0x400];
-char python_snprintf_buffer[0x400];
-char python_script_buffer[0x400];
 char python_error_buffer[0x400];
+
 
 void show_error_and_exit(const char* message)
 {
@@ -165,18 +224,31 @@ void show_error_and_exit(const char* message)
     Py_Exit(1);
 }
 
+
+static AppletHookCookie applet_hook_cookie;
+static void on_applet_hook(AppletHookType hook, void *param)
+{
+   switch (hook)
+   {
+      case AppletHookType_OnExitRequest:
+        fsdevCommitDevice("save");
+        svcSleepThread(1500000000ULL);
+        appletUnlockExit();
+        break;
+
+      default:
+         break;
+   }
+}
+
+
+
 int main(int argc, char* argv[])
 {
     setenv("MESA_NO_ERROR", "1", 1);
-    if (__nx_applet_type != AppletType_Application)
-    {
-#if 0
-        show_error_and_exit("Only application override is supported by this program.\n\nTo run this program as application override, hold down the R button while launching an application on the menu.");
-#endif
-#if 1
-        setenv("RENPY_LESS_MEMORY", "1", 1);
-#endif
-    }
+
+    appletLockExit();
+    appletHook(&applet_hook_cookie, on_applet_hook, NULL);
 
     Py_NoSiteFlag = 1;
     Py_IgnoreEnvironmentFlag = 1;
@@ -185,9 +257,8 @@ int main(int argc, char* argv[])
     Py_OptimizeFlag = 2;
 
     static struct _inittab builtins[] = {
-#if 0
-        {"_libnx", init_libnx},
-#endif
+
+        {"_otrhlibnx", init_otrh_libnx},
 
         {"pygame_sdl2.color", initpygame_sdl2_color},
         {"pygame_sdl2.controller", initpygame_sdl2_controller},
@@ -195,18 +266,11 @@ int main(int argc, char* argv[])
         {"pygame_sdl2.draw", initpygame_sdl2_draw},
         {"pygame_sdl2.error", initpygame_sdl2_error},
         {"pygame_sdl2.event", initpygame_sdl2_event},
-#if 0
-        {"pygame_sdl2.font", initpygame_sdl2_font},
-#endif
         {"pygame_sdl2.gfxdraw", initpygame_sdl2_gfxdraw},
         {"pygame_sdl2.image", initpygame_sdl2_image},
         {"pygame_sdl2.joystick", initpygame_sdl2_joystick},
         {"pygame_sdl2.key", initpygame_sdl2_key},
         {"pygame_sdl2.locals", initpygame_sdl2_locals},
-#if 0
-        {"pygame_sdl2.mixer", initpygame_sdl2_mixer},
-        {"pygame_sdl2.mixer_music", initpygame_sdl2_mixer_music},
-#endif
         {"pygame_sdl2.mouse", initpygame_sdl2_mouse},
         {"pygame_sdl2.power", initpygame_sdl2_power},
         {"pygame_sdl2.pygame_time", initpygame_sdl2_pygame_time},
@@ -229,14 +293,6 @@ int main(int argc, char* argv[])
         {"renpy.gl.glrtt_copy", initrenpy_gl_glrtt_copy},
         {"renpy.gl.glrtt_fbo", initrenpy_gl_glrtt_fbo},
         {"renpy.gl.gltexture", initrenpy_gl_gltexture},
-#if 0
-        {"renpy.gl2.gl2draw", initrenpy_gl2_gl2draw},
-        {"renpy.gl2.gl2geometry", initrenpy_gl2_gl2geometry},
-        {"renpy.gl2.gl2shader", initrenpy_gl2_gl2shader},
-        {"renpy.gl2.gl2texture", initrenpy_gl2_gl2texture},
-        {"renpy.gl2.uguu", initrenpy_gl2_uguu},
-        {"renpy.gl2.uguugl", initrenpy_gl2_uguugl},
-#endif
         {"renpy.parsersupport", initrenpy_parsersupport},
         {"renpy.pydict", initrenpy_pydict},
         {"renpy.style", initrenpy_style},
@@ -259,90 +315,26 @@ int main(int argc, char* argv[])
         {NULL, NULL}
     };
 
-    if (argc != 1)
+    FILE* sysconfigdata_file = fopen("romfs:/Contents/lib.zip", "rb");
+    FILE* renpy_file = fopen("romfs:/Contents/renpy.py", "rb");
+
+    if (sysconfigdata_file == NULL)
     {
-        show_error_and_exit("Only one argument (the program itself) should be passed to the program.\n\nPlease use hbmenu to run this program.");
+        show_error_and_exit("Could not find lib.zip.\n\nPlease ensure that you have extracted the files correctly so that the \"lib.zip\" file is in the same directory as the nsp file.");
     }
 
-    if (strchr(argv[0], ' '))
+    if (renpy_file == NULL)
     {
-        show_error_and_exit("No spaces should be contained in the program path.\n\nPlease remove spaces from the program path.");
+        show_error_and_exit("Could not find renpy.py.\n\nPlease ensure that you have extracted the files correctly so that the \"renpy.py\" file is in the same directory as the nsp file.");
     }
 
-    if (!strchr(argv[0], ':'))
-    {
-        show_error_and_exit("Program path does not appear to be an absolute path.\n\nPlease use hbmenu to run this program.");
-    }
-
-    char* last_dir_separator = strrchr(argv[0], '/');
-
-    if (last_dir_separator)
-    {
-        size_t dirpath_size = last_dir_separator - argv[0];
-        memcpy(relative_dir_path, argv[0], dirpath_size);
-        relative_dir_path[dirpath_size] = '\000';
-    }
-    else
-    {
-        getcwd(relative_dir_path, sizeof(relative_dir_path));
-    }
-
-    char* dir_paths[] = {
-        "romfs:/Contents",
-        relative_dir_path,
-        NULL,
-    };
-
-    int found_sysconfigdata = 0;
-    int found_renpy = 0;
-
-    for (int i = 0; i < sizeof(dir_paths); i += 1)
-    {
-        if (dir_paths[i] == NULL)
-        {
-            break;
-        }
-        snprintf(sysconfigdata_file_path, sizeof(sysconfigdata_file_path), "%s/lib.zip", dir_paths[i]);
-        FILE* sysconfigdata_file = fopen((const char*)sysconfigdata_file_path, "rb");
-        if (sysconfigdata_file != NULL)
-        {
-            found_sysconfigdata = 1;
-            fclose(sysconfigdata_file);
-        }
-
-        snprintf(python_script_buffer, sizeof(python_script_buffer), "%s/renpy.py", dir_paths[i]);
-        FILE* renpy_file = fopen((const char*)python_script_buffer, "rb");
-        if (renpy_file != NULL)
-        {
-            found_renpy = 1;
-            fclose(renpy_file);
-        }
-
-        if (found_sysconfigdata == 1 && found_renpy == 1)
-        {
-            snprintf(python_home_buffer, sizeof(python_home_buffer), "%s/lib.zip", dir_paths[i]);
-            snprintf(python_snprintf_buffer, sizeof(python_snprintf_buffer), "import sys\nsys.path = ['%s/lib.zip']", dir_paths[i]);
-            Py_SetPythonHome(python_home_buffer);
-            break;
-        }
-    }
-
-    if (found_sysconfigdata == 0)
-    {
-        show_error_and_exit("Could not find lib.zip.\n\nPlease ensure that you have extracted the files correctly so that the \"lib.zip\" file is in the same directory as the nro file.");
-    }
-
-    if (found_renpy == 0)
-    {
-        show_error_and_exit("Could not find renpy.py.\n\nPlease ensure that you have extracted the files correctly so that the \"renpy.py\" file is in the same directory as the nro file.");
-    }
-
+    fclose(sysconfigdata_file);
     Py_InitializeEx(0);
-
+    Py_SetPythonHome("romfs:/Contents/lib.zip");
     PyImport_ExtendInittab(builtins);
 
     char* pyargs[] = {
-        python_script_buffer,
+        "romfs:/Contents/renpy.py",
         NULL,
     };
 
@@ -350,7 +342,7 @@ int main(int argc, char* argv[])
 
     int python_result;
 
-    python_result = PyRun_SimpleString(python_snprintf_buffer);
+    python_result = PyRun_SimpleString("import sys\nsys.path = ['romfs:/Contents/lib.zip']");
 
     if (python_result == -1)
     {
@@ -361,7 +353,7 @@ int main(int argc, char* argv[])
     { \
         if (PyRun_SimpleString("import " lib) == -1) \
         { \
-            show_error_and_exit("Could not import python library " lib ".\n\nPlease ensure that you have extracted the files correctly so that the \"lib\" folder is in the same directory as the nro file, and that the \"lib\" folder contains the folder \"python2.7\". \nInside that folder, the file \"" lib ".py\" or folder \"" lib "\" needs to exist."); \
+            show_error_and_exit("Could not import python library " lib ".\n\nPlease ensure that you have extracted the files correctly so that the \"lib\" folder is in the same directory as the nsp file, and that the \"lib\" folder contains the folder \"python2.7\". \nInside that folder, the file \"" lib ".py\" or folder \"" lib "\" needs to exist."); \
         } \
     }
 
@@ -371,19 +363,11 @@ int main(int argc, char* argv[])
 
 #undef x
 
-    FILE* renpy_file = fopen((const char*)python_script_buffer, "rb");
-    if (renpy_file == NULL)
-    {
-        show_error_and_exit("Could not open renpy.py after Python initialization.\n\nThis is an internal error and should not occur during normal usage.");
-    }
-    else
-    {
-        python_result = PyRun_SimpleFileEx(renpy_file, (const char*)python_script_buffer, 1);
-    }
+    python_result = PyRun_SimpleFileEx(renpy_file, "romfs:/Contents/renpy.py", 1);
 
     if (python_result == -1)
     {
-        show_error_and_exit("An uncaught Python exception occurred during renpy.py execution.\n\nPlease look in the \"Ren'Py Logs\" folder on the SD card root for more information about this exception.");
+        show_error_and_exit("An uncaught Python exception occurred during renpy.py execution.\n\nPlease look in the save:// folder for more information about this exception.");
     }
 
     Py_Exit(0);

@@ -32,8 +32,6 @@ set(INCLUDES
     ${DEVKITPRO}/portlibs/switch/include/python2.7
 )
 
-# source/libnx_wrap.c disabled for the time being
-
 set(SOURCES
     source/main.c
 )
@@ -155,20 +153,9 @@ target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:RELEASE>:${OPTIMIZATION
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CONFIG:RELWITHDEBINFO>:${OPTIMIZATION_FLAGS}>)
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
-add_custom_target(${PROJECT_NAME}.nacp
-    COMMAND ${DEVKITPRO}/tools/bin/nacptool
-        --create
-        \"${SWITCH_APP_NAME}\"
-        \"${SWITCH_AUTHOR}\"
-        \"${SWITCH_VERSION}\"
-        ${PROJECT_NAME}.nacp
-)
-add_custom_target(${PROJECT_NAME}.nro ALL
-    COMMAND ${DEVKITPRO}/tools/bin/elf2nro
+add_custom_target(${PROJECT_NAME}.nso ALL
+    COMMAND ${DEVKITPRO}/tools/bin/elf2nso
         ${PROJECT_NAME}
-        ${PROJECT_NAME}.nro
-        --icon=${CMAKE_SOURCE_DIR}/icon.jpg
-        --nacp=${PROJECT_NAME}.nacp
-        --romfsdir=${CMAKE_SOURCE_DIR}/romfs
-    DEPENDS ${PROJECT_NAME}.nacp ${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/icon.jpg
+        ${PROJECT_NAME}.nso
+    DEPENDS ${PROJECT_NAME}
 )
