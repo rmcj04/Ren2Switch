@@ -6,7 +6,7 @@ jobs:
     build-artifact:
         name: Build
         runs-on: ubuntu-latest
-        container: devkitpro/devkita64:20221113
+        container: devkitpro/devkita64
 
         steps:
         - name: Check for dockerenv file
